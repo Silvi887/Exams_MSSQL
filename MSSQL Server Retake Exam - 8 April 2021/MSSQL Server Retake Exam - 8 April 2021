@@ -1,1 +1,252 @@
 
+
+
+CREATE TABLE Users (
+Id INT PRIMARY KEY IDENTITY(1,1),
+Username VARCHAR(30) NOT NULL UNIQUE,
+[Password] VARCHAR(50) NOT NULL UNIQUE,
+[Name]   VARCHAR(50)  NULL UNIQUE,
+Birthdate DATETIME  NULL,
+Age  INT CHECK(Age>=14 AND Age<=110),
+Email  VARCHAR(50) NOT NULL,
+
+)
+
+CREATE TABLE Departments (
+Id INT PRIMARY KEY IDENTITY(1,1),
+[Name] VARCHAR(50) NOT NULL
+)
+
+CREATE TABLE Employees (
+Id INT PRIMARY KEY IDENTITY(1,1),
+FirstName  VARCHAR(25)  NULL,
+LastName  VARCHAR(25)  NULL,
+Birthdate  DATETIME NULL,
+Age     INT CHECK(Age>=18 AND Age<=110),
+DepartmentId INT  FOREIGN KEY
+REFERENCES Departments(Id)
+)
+
+CREATE TABLE Categories (
+Id INT PRIMARY KEY IDENTITY(1,1),
+[Name]  VARCHAR(50) NOT NULL,
+DepartmentId INT NOT NULL FOREIGN KEY
+REFERENCES Departments(Id)
+)
+
+CREATE TABLE [Status] (
+Id INT PRIMARY KEY IDENTITY(1,1),
+[Label] VARCHAR(30) NOT NULL
+)
+
+
+CREATE TABLE Reports (
+Id INT PRIMARY KEY IDENTITY(1,1),
+CategoryId INT NOT NULL  FOREIGN KEY REFERENCES Categories(Id),
+StatusId INT  NOT NULL  FOREIGN KEY REFERENCES [Status](Id),
+OpenDate DATETIME NOT NULL,
+CloseDate DATETIME  NULL,
+[Description] VARCHAR(200) NOT NULL,
+UserId INT NOT NULL FOREIGN KEY REFERENCES Users(Id),
+EmployeeId INT  FOREIGN KEY REFERENCES Employees(Id)
+)
+
+--2
+
+INSERT INTO Employees
+( FirstName, LastName, Birthdate,  DepartmentId)
+VALUES('Marlo',	'O''Malley'	,'1958-9-21',	1),
+('Niki',	'Stanaghan',	'1969-11-26',	4),
+('Ayrton',	'Senna',	'1960-03-21',	9),
+('Ronnie',	'Peterson',	'1944-02-14',	9),
+('Giovanna',	'Amati',	'1959-07-20',	5)
+
+INSERT INTO Reports ( CategoryId, StatusId, OpenDate,
+CloseDate, [Description], UserId, EmployeeId)
+VALUES
+(1,	1,	'2017-04-13',	'','Stuck Road on Str.133'	,6	,2),
+(6	,3	,'2015-09-05',	'2015-12-06',	'Charity trail running'	,3	,5),
+(14	,2	,'2015-09-07'	,'',	'Falling bricks on Str.58',	5	,2),
+(4	,3	,'2017-07-03',	'2017-07-06',	'Cut off streetlight on Str.11',	1	,1)
+
+--3
+
+SELECT * FROM 
+Reports WHERE CloseDate IS NULL
+UPDATE Reports
+SET CloseDate= GETDATE()
+WHERE CloseDate IS NULL
+
+--4
+
+USE [Service]
+
+--5
+SELECT r.[Description], 
+FORMAT(r.OpenDate,'dd-MM-yyyy') AS OpenDate 
+FROM Reports  R WHERE
+EmployeeId IS NULL
+ORDER BY r.OpenDate ASC, [Description] ASC
+
+--6
+SELECT r.[Description],c.[Name] AS CategoryName
+FROM Reports r 
+INNER JOIN Categories c
+ON c.Id= r.CategoryId
+ORDER BY  r.[Description] ASC,c.[Name] ASC
+
+
+--7
+SELECT TOP 5 c.[Name] AS CategoryName, COUNT(R.Id) AS ReportsNumber
+FROM Categories c
+INNER JOIN  Reports r ON c.Id= r.CategoryId
+GROUP BY  c.[Name]
+ORDER BY ReportsNumber DESC,
+ c.[Name]  ASC
+
+
+
+---8
+SELECT * FROM Reports
+
+USE [Service]
+
+SELECT u.Username, c.[Name] AS CategoryName  
+FROM Users u
+INNER JOIN Reports r ON u.Id= r.UserId
+INNER JOIN Categories c ON c.Id= r.CategoryId
+WHERE
+CONCAT(DATEPART(day,r.OpenDate),'-',DATEPART(MONTH,r.OpenDate))
+= CONCAT(DATEPART(day,u.Birthdate),'-',DATEPART(MONTH,u.Birthdate))
+
+ORDER BY u.Username ASC, c.[Name]  ASC
+
+---9
+SELECT CONCAT(e.FirstName,' ', e.LastName) AS FullName, 
+COUNT(u.Id)  AS UsersCount
+FROM Employees e 
+LEFT JOIN Reports r ON e.Id= r.EmployeeId
+LEFT JOIN  Users u ON u.Id= r.UserId
+GROUP BY e.FirstName, e.LastName
+ORDER BY UsersCount DESC, FullName ASC
+
+--10
+
+
+
+SELECT 
+CASE WHEN (e.FirstName IS NOT NULL OR  e.LastName
+IS NOT NULL)  THEN
+CONCAT(e.FirstName,' ', e.LastName)
+ELSE 'None' END 
+AS Employee
+,
+ISNULL(d.[Name],'None') AS Department,
+ISNULL(c.[Name],'None') AS Category,
+ISNULL(r.[Description],'None') AS [Description],
+ISNULL(FORMAT( r.OpenDate,'dd.MM.yyyy'),'None') AS OpenDate,
+ISNULL(s.[Label],'None') AS [Status],
+ISNULL(u.Name, 'None') AS Username
+
+
+FROM  Reports r 
+LEFT JOIN Employees e ON R.EmployeeId= E.Id
+
+ LEFT JOIN Departments d ON d.Id= e.DepartmentId
+LEFT  JOIN Categories c ON c.Id= r.CategoryId
+LEFT  JOIN [Status] s ON s.Id=r.StatusId 
+
+LEFT  JOIN Users u ON u.Id= r.UserId
+ ORDER BY 
+ e.FirstName DESC, e.LastName DESC, 
+Department ASC,
+Category ASC,
+ r.[Description] ASC,
+R.OpenDate ASC, 
+[Status]  ASC,
+u.Username ASC
+
+
+
+
+
+---11
+
+
+CREATE FUNCTION [dbo].[udf_HoursToComplete]
+(
+	
+	@StartDate DATETIME, @EndDate DATETIME
+)
+RETURNS INT
+AS
+BEGIN
+	
+	DECLARE @Result INT 
+	IF @StartDate IS NULL
+	BEGIN
+
+	SET @Result=0
+
+	END
+
+	IF @EndDate IS NULL
+	BEGIN
+
+	SET @Result=0
+
+	END
+
+ELSE BEGIN
+
+SET @Result=(SELECT DATEDIFF(HOUR ,@StartDate, @EndDate))
+END
+
+
+	RETURN @Result
+
+END
+
+--12
+
+CREATE PROCEDURE 
+[dbo].[usp_AssignEmployeeToReport]
+(@EmployeeId INT, @ReportId INT)
+
+
+AS
+
+BEGIN
+DECLARE @EmployeDepartment INT
+DECLARE @ReportDepartment INT
+
+SET @EmployeDepartment=(SELECT d.Id FROM Employees e
+       INNER JOIN
+						Departments d ON d.Id=e.DepartmentId
+						WHERE e.Id=@EmployeeId
+						)
+
+
+SET  @ReportDepartment=(SELECT d.Id FROM Reports r INNER JOIN 
+						Categories c ON c.Id= r.CategoryId
+						INNER JOIN Departments d ON D.Id= c.DepartmentId WHERE R.Id=@ReportId)
+
+IF(@EmployeDepartment = @ReportDepartment)
+
+BEGIN
+UPDATE Reports
+SET EmployeeId=@EmployeeId
+WHERE Id=@ReportId
+
+END
+
+ELSE
+
+BEGIN
+
+RAISERROR('Employee doesn''t belong to the appropriate department!' , 16,1)
+RETURN;
+
+END
+
+END
